@@ -1,41 +1,76 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Product } from '@/lib/types';
 import { PlusCircle, Trash2 } from 'lucide-react';
 
-const initialProducts: Product[] = [
-    { id: '1', name: 'Rice', quantity: '25kg Bag' },
-    { id: '2', name: 'Dal', quantity: '10kg Bag' },
-    { id: '3', name: 'Cooking Oil', quantity: '5L Can' },
-];
+interface Product {
+    id: string;
+    name: string;
+    quantity: string;
+}
 
 export default function ProductsPage() {
-    const [products, setProducts] = useState<Product[]>(initialProducts);
+    const { user } = useAuth();
+    const [products, setProducts] = useState<Product[]>([]);
+    const [loading, setLoading] = useState(false);
 
-    const handleAddProduct = (e: React.FormEvent<HTMLFormElement>) => {
+    useEffect(() => {
+        fetchProducts();
+    }, []);
+
+    const fetchProducts = async () => {
+        const { data } = await supabase
+            .from('products')
+            .select('id, name, quantity')
+            .order('created_at', { ascending: false });
+
+        if (data) {
+            setProducts(data);
+        }
+    };
+
+    const handleAddProduct = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
+        if (!user) return;
+
         const form = e.currentTarget;
         const formData = new FormData(form);
         const name = formData.get('productName') as string;
         const quantity = formData.get('quantity') as string;
 
         if (name && quantity) {
-            const newProduct: Product = {
-                id: new Date().toISOString(),
-                name,
-                quantity,
-            };
-            setProducts(prev => [newProduct, ...prev]);
-            form.reset();
+            setLoading(true);
+            const { error } = await supabase
+                .from('products')
+                .insert({
+                    name,
+                    quantity,
+                    created_by: user.id,
+                });
+
+            setLoading(false);
+
+            if (!error) {
+                form.reset();
+                fetchProducts();
+            }
         }
     };
-    
-    const handleDelete = (id: string) => {
-        setProducts(products.filter(p => p.id !== id));
-    }
+
+    const handleDelete = async (id: string) => {
+        const { error } = await supabase
+            .from('products')
+            .delete()
+            .eq('id', id);
+
+        if (!error) {
+            fetchProducts();
+        }
+    };
 
     return (
         <div className="grid gap-6 md:grid-cols-3">
@@ -55,9 +90,9 @@ export default function ProductsPage() {
                                 <Label htmlFor="quantity">Quantity / Unit</Label>
                                 <Input name="quantity" id="quantity" placeholder="e.g., 25kg Bag" required className="mt-1" />
                             </div>
-                            <Button type="submit" className="w-full">
+                            <Button type="submit" className="w-full" disabled={loading}>
                                 <PlusCircle className="w-4 h-4 mr-2" />
-                                Add Product
+                                {loading ? 'Adding...' : 'Add Product'}
                             </Button>
                         </form>
                     </CardContent>
@@ -70,19 +105,23 @@ export default function ProductsPage() {
                         <CardDescription>List of all available products.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <ul className="space-y-3">
-                            {products.map(product => (
-                                <li key={product.id} className="flex items-center justify-between p-3 transition-colors rounded-lg bg-secondary hover:bg-accent">
-                                    <div>
-                                        <p className="font-semibold text-secondary-foreground">{product.name}</p>
-                                        <p className="text-sm text-muted-foreground">{product.quantity}</p>
-                                    </div>
-                                    <Button variant="ghost" size="icon" onClick={() => handleDelete(product.id)}>
-                                        <Trash2 className="w-5 h-5 text-destructive" />
-                                    </Button>
-                                </li>
-                            ))}
-                        </ul>
+                        {products.length === 0 ? (
+                            <div className="py-8 text-center text-gray-500">No products added yet.</div>
+                        ) : (
+                            <ul className="space-y-3">
+                                {products.map(product => (
+                                    <li key={product.id} className="flex items-center justify-between p-3 transition-colors rounded-lg bg-secondary hover:bg-accent">
+                                        <div>
+                                            <p className="font-semibold text-secondary-foreground">{product.name}</p>
+                                            <p className="text-sm text-muted-foreground">{product.quantity}</p>
+                                        </div>
+                                        <Button variant="ghost" size="icon" onClick={() => handleDelete(product.id)}>
+                                            <Trash2 className="w-5 h-5 text-destructive" />
+                                        </Button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </CardContent>
                 </Card>
             </div>

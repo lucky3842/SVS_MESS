@@ -1,21 +1,77 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export default function DashboardPage() {
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+interface TodayEntry {
+  morning_count: number;
+  night_count: number;
+  total_attendance: number;
+}
 
-  const handleSubmit = (e: React.FormEvent) => {
+export default function DashboardPage() {
+  const { user } = useAuth();
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [morningCount, setMorningCount] = useState('');
+  const [nightCount, setNightCount] = useState('');
+  const [attendance, setAttendance] = useState('');
+  const [todayData, setTodayData] = useState<TodayEntry | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetchTodayEntry();
+  }, []);
+
+  const fetchTodayEntry = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('daily_entries')
+      .select('morning_count, night_count, total_attendance')
+      .eq('entry_date', today)
+      .maybeSingle();
+
+    if (data) {
+      setTodayData(data);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedDate) {
-      alert('Please select a date.');
+    if (!selectedDate || !user) {
+      setError('Please select a date and ensure you are logged in.');
       return;
     }
-    // To avoid timezone issues, treat the date string as UTC
-    const date = new Date(selectedDate + 'T00:00:00');
-    alert('Entry submitted for ' + date.toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }));
+
+    setError('');
+    setLoading(true);
+
+    const { error: submitError } = await supabase
+      .from('daily_entries')
+      .upsert({
+        entry_date: selectedDate,
+        morning_count: parseInt(morningCount),
+        night_count: parseInt(nightCount),
+        total_attendance: parseInt(attendance),
+        user_id: user.id,
+      }, {
+        onConflict: 'entry_date'
+      });
+
+    setLoading(false);
+
+    if (submitError) {
+      setError(submitError.message);
+    } else {
+      setMorningCount('');
+      setNightCount('');
+      setAttendance('');
+      fetchTodayEntry();
+      alert('Entry submitted successfully!');
+    }
   };
 
   return (
@@ -27,6 +83,11 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md">
+                {error}
+              </div>
+            )}
             <div>
               <Label htmlFor="entryDate">Date</Label>
               <Input
@@ -40,17 +101,43 @@ export default function DashboardPage() {
             </div>
             <div>
               <Label htmlFor="morningCount">Morning Count</Label>
-              <Input id="morningCount" type="number" placeholder="e.g., 50" required className="mt-1" />
+              <Input
+                id="morningCount"
+                type="number"
+                placeholder="e.g., 50"
+                value={morningCount}
+                onChange={(e) => setMorningCount(e.target.value)}
+                required
+                className="mt-1"
+              />
             </div>
             <div>
               <Label htmlFor="nightCount">Night Count</Label>
-              <Input id="nightCount" type="number" placeholder="e.g., 45" required className="mt-1" />
+              <Input
+                id="nightCount"
+                type="number"
+                placeholder="e.g., 45"
+                value={nightCount}
+                onChange={(e) => setNightCount(e.target.value)}
+                required
+                className="mt-1"
+              />
             </div>
             <div>
               <Label htmlFor="attendance">Total Attendance</Label>
-              <Input id="attendance" type="number" placeholder="e.g., 95" required className="mt-1" />
+              <Input
+                id="attendance"
+                type="number"
+                placeholder="e.g., 95"
+                value={attendance}
+                onChange={(e) => setAttendance(e.target.value)}
+                required
+                className="mt-1"
+              />
             </div>
-            <Button type="submit" className="w-full !mt-6">Submit Entry</Button>
+            <Button type="submit" className="w-full !mt-6" disabled={loading}>
+              {loading ? 'Submitting...' : 'Submit Entry'}
+            </Button>
           </form>
         </CardContent>
       </Card>
@@ -62,15 +149,21 @@ export default function DashboardPage() {
         <CardContent className="space-y-4">
             <div className="flex items-center justify-between p-3 rounded-lg bg-secondary">
                 <span className="font-medium text-secondary-foreground">Morning Count</span>
-                <span className="font-bold text-lg text-primary">50</span>
+                <span className="font-bold text-lg text-primary">
+                  {todayData?.morning_count ?? '-'}
+                </span>
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-secondary">
                 <span className="font-medium text-secondary-foreground">Night Count</span>
-                <span className="font-bold text-lg text-primary">45</span>
+                <span className="font-bold text-lg text-primary">
+                  {todayData?.night_count ?? '-'}
+                </span>
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-secondary">
                 <span className="font-medium text-secondary-foreground">Total Attendance</span>
-                <span className="font-bold text-lg text-primary">95</span>
+                <span className="font-bold text-lg text-primary">
+                  {todayData?.total_attendance ?? '-'}
+                </span>
             </div>
         </CardContent>
       </Card>

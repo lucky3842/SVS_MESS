@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { BookMarked, Calendar, LogOut, MessageSquare, Package, PanelLeft, User } from 'lucide-react';
+import { BookMarked, Calendar, LogOut, MessageSquare, Package, PanelLeft } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 
 const navItems = [
@@ -12,10 +14,27 @@ const navItems = [
 
 const AppLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [userName, setUserName] = useState('User');
   const navigate = useNavigate();
+  const { user, signOut } = useAuth();
 
-  const handleLogout = () => {
-    // Placeholder for logout logic
+  useEffect(() => {
+    if (user) {
+      supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setUserName(data.full_name);
+          }
+        });
+    }
+  }, [user]);
+
+  const handleLogout = async () => {
+    await signOut();
     navigate('/sign-in');
   };
 
@@ -52,7 +71,7 @@ const AppLayout = () => {
             {/* Can add breadcrumbs or page title here */}
           </div>
           <div className="flex items-center space-x-4">
-            <span className="text-sm font-medium">Welcome, User!</span>
+            <span className="text-sm font-medium">Welcome, {userName}!</span>
             <Button variant="ghost" size="icon" onClick={handleLogout}>
               <LogOut className="w-5 h-5" />
             </Button>
